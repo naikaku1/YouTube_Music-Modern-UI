@@ -187,6 +187,40 @@
             .ytm-lang-pill:hover {
                 opacity: 1;
             }
+
+            .lyric-line {
+                position: relative;
+            }
+            .lyric-line span {
+                display: block;
+            }
+            .lyric-line .lyric-translation {
+                font-size: 0.52em;
+                opacity: 0.8;
+                margin-top: 4px;
+            }
+
+            .ytm-has-timestamp .lyric-line .lyric-translation {
+                opacity: 0;
+                max-height: 0;
+                margin-top: 0;
+                overflow: hidden;
+                transition:
+                    opacity 0.25s ease-out,
+                    max-height 0.25s ease-out,
+                    margin-top 0.25s ease-out;
+            }
+            .ytm-has-timestamp .lyric-line.show-translation .lyric-translation {
+                opacity: 0.95;
+                max-height: 4em;
+                margin-top: 6px;
+            }
+            .ytm-has-timestamp .lyric-line {
+                margin: 6px 0;
+            }
+            .ytm-has-timestamp .lyric-line.active {
+                margin: 12px 0;
+            }
         `;
         document.head.appendChild(style);
     })();
@@ -238,20 +272,18 @@
         }
     };
 
-    const parseLRC = (lrc) => {
-        hasTimestamp = false;
-        if (!lrc) return [];
+    const parseLRCInternal = (lrc) => {
+        if (!lrc) return { lines: [], hasTs: false };
 
         const tagTest = /\[\d{2}:\d{2}\.\d{2,3}\]/;
         if (!tagTest.test(lrc)) {
-            return lrc
+            const lines = lrc
                 .split(/\r?\n/)
                 .map(t => t.trim())
                 .filter(Boolean)
                 .map(text => ({ time: null, text }));
+            return { lines, hasTs: false };
         }
-
-        hasTimestamp = true;
 
         const tagExp = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
         const result = [];
@@ -282,7 +314,19 @@
             if (text) result.push({ time: lastTime, text });
         }
 
-        return result;
+        result.sort((a, b) => (a.time || 0) - (b.time || 0));
+
+        return { lines: result, hasTs: true };
+    };
+
+    const parseBaseLRC = (lrc) => {
+        const { lines, hasTs } = parseLRCInternal(lrc);
+        hasTimestamp = hasTs;
+        return lines;
+    };
+
+    const parseLRCNoFlag = (lrc) => {
+        return parseLRCInternal(lrc).lines;
     };
 
     const normalizeStr = (s) => (s || '').replace(/\s+/g, '').trim();
@@ -372,7 +416,7 @@
         const el = document.createElement(tag);
         if (id) el.id = id;
         if (cls) el.className = cls;
-        if (html) el.innerHTML = html;
+        if (html !== undefined && html !== null) el.innerHTML = html;
         return el;
     };
 
@@ -743,6 +787,57 @@
         ui.lyrics.innerHTML = '<div style="opacity:0.5; padding:20px;">Loading...</div>';
     }
 
+    const buildAlignedTranslations = (baseLines, transLinesByLang) => {
+        const alignedMap = {};
+        const TOL = 0.15;
+
+        Object.keys(transLinesByLang).forEach(lang => {
+            const arr = transLinesByLang[lang];
+            const res = new Array(baseLines.length).fill(null);
+
+            if (!Array.isArray(arr) || !arr.length) {
+                alignedMap[lang] = res;
+                return;
+            }
+
+            let j = 0;
+            for (let i = 0; i < baseLines.length; i++) {
+                const tBase = baseLines[i].time;
+                if (typeof tBase !== 'number') {
+                    const cand = arr[i];
+                    if (cand && typeof cand.text === 'string') {
+                        const txt = cand.text.trim();
+                        res[i] = txt || null;
+                    }
+                    continue;
+                }
+
+                while (
+                    j < arr.length &&
+                    typeof arr[j].time === 'number' &&
+                    arr[j].time < tBase - TOL
+                ) {
+                    j++;
+                }
+
+                if (
+                    j < arr.length &&
+                    typeof arr[j].time === 'number' &&
+                    Math.abs(arr[j].time - tBase) <= TOL
+                ) {
+                    const txt = (arr[j].text || '').trim();
+                    res[i] = txt || null;
+                } else {
+                    res[i] = null;
+                }
+            }
+
+            alignedMap[lang] = res;
+        });
+
+        return alignedMap;
+    };
+
     async function applyTranslations(baseLines, youtubeUrl) {
         if (!config.useTrans || !Array.isArray(baseLines) || !baseLines.length) return baseLines;
 
@@ -778,7 +873,7 @@
         langsToFetch.forEach(lang => {
             const lrc = (lrcMap && lrcMap[lang]) || '';
             if (lrc) {
-                const parsed = parseLRC(lrc);
+                const parsed = parseLRCNoFlag(lrc);
                 transLinesByLang[lang] = parsed;
             } else {
                 needDeepL.push(lang);
@@ -808,13 +903,14 @@
             }
         }
 
+        const alignedMap = buildAlignedTranslations(baseLines, transLinesByLang);
         const final = baseLines.map(l => ({ ...l }));
 
         const getLangTextAt = (langCode, index, baseText) => {
             if (!langCode || langCode === 'original') return baseText;
-            const arr = transLinesByLang[langCode];
-            if (!arr || !arr[index]) return baseText;
-            return arr[index].text || baseText;
+            const arr = alignedMap[langCode];
+            if (!arr) return baseText;
+            return arr[index] || baseText;
         };
 
         for (let i = 0; i < final.length; i++) {
@@ -885,7 +981,7 @@
             return;
         }
 
-        let parsed = parseLRC(data);
+        let parsed = parseBaseLRC(data);
         const videoUrl = getCurrentVideoUrl();
         let finalLines = parsed;
 
@@ -903,6 +999,8 @@
 
         const hasData = Array.isArray(data) && data.length > 0;
         document.body.classList.toggle('ytm-no-lyrics', !hasData);
+        document.body.classList.toggle('ytm-has-timestamp', hasTimestamp);
+        document.body.classList.toggle('ytm-no-timestamp', !hasTimestamp);
 
         if (!hasData) {
             const meta = getMetadata();
@@ -934,10 +1032,16 @@
         }
 
         data.forEach(line => {
-            const row = createEl('div', '', 'lyric-line', `<span>${line.text}</span>`);
+            const row = createEl('div', '', 'lyric-line');
+            const mainSpan = createEl('span', '', 'lyric-main', line.text);
+            row.appendChild(mainSpan);
+
             if (line.translation) {
-                row.appendChild(createEl('span', '', 'lyric-translation', line.translation));
+                const subSpan = createEl('span', '', 'lyric-translation', line.translation);
+                row.appendChild(subSpan);
+                row.classList.add('has-translation');
             }
+
             row.onclick = () => {
                 if (!hasTimestamp || line.time == null) return;
                 const v = document.querySelector('video');
@@ -977,10 +1081,18 @@
             if (i === idx && !isInterlude) {
                 if (!r.classList.contains('active')) {
                     r.classList.add('active');
+                    if (r.classList.contains('has-translation')) {
+                        r.classList.add('show-translation');
+                    }
                     r.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    if (r.classList.contains('has-translation')) {
+                        r.classList.add('show-translation');
+                    }
                 }
             } else {
                 r.classList.remove('active');
+                r.classList.remove('show-translation');
             }
         });
     }, true);
