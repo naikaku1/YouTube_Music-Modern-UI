@@ -236,7 +236,7 @@
             </button>
             <button class="ytm-upload-menu-item" data-action="add-sync">
                 <span class="ytm-upload-menu-item-icon">✨</span>
-                <span>歌詞の同期表示を追加</span>
+                <span>歌詞の追加/同期表示を追加</span>
             </button>
             <div class="ytm-upload-menu-separator"></div>
             <button class="ytm-upload-menu-item" data-action="fix">
