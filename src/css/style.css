@@ -67,7 +67,19 @@ body.ytm-custom-layout ytmusic-search-box {
     box-shadow: 0 20px 60px rgba(0,0,0,0.6); overflow: hidden; margin-bottom: 30px; 
 }
 #ytm-artwork-container img { width: 100%; height: 100%; object-fit: cover; }
-#ytm-custom-title { font-size: 32px; font-weight: 900; color: #fff; margin-bottom: 8px; line-height: 1.2; text-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+
+#ytm-custom-title { 
+    font-size: 32px; 
+    font-weight: 900; 
+    color: #fff; 
+    margin-bottom: 8px; 
+    line-height: 1.2; 
+    text-shadow: 0 4px 10px rgba(0,0,0,0.5); 
+    /* ★ タイトル改行の修正 */
+    word-break: keep-all;
+    overflow-wrap: break-word;
+}
+
 #ytm-custom-artist { font-size: 20px; font-weight: 600; color: rgba(255,255,255,0.7); margin-bottom: 24px; }
 
 #ytm-btn-area { 
@@ -156,6 +168,11 @@ body.ytm-custom-layout ytmusic-search-box {
   flex-direction: column;
   align-items: flex-start;
 }
+/* ★ 空行を非表示にする修正 */
+.lyric-line.empty-line {
+    display: none;
+}
+
 .lyric-line.active {
   color: #fff;
   filter: blur(0);
