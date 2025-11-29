@@ -273,7 +273,7 @@ body.ytm-custom-layout .lyric-line.active .lyric-char.char-active {
 body.ytm-custom-layout ytmusic-player-bar {
   position: fixed !important; 
   bottom: 40px !important; left: 50% !important; transform: translateX(-50%) !important;
-  width: 95% !important; max-width: 900px !important; 
+  width: 95% !important; max-width: 975px !important; 
   height: 80px !important; border-radius: 40px !important;
   background: rgba(20,20,20,0.6) !important; backdrop-filter: blur(60px) saturate(180%) !important;
   border: 1px solid rgba(255,255,255,0.15) !important; 
