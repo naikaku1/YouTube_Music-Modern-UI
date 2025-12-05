@@ -31,6 +31,128 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   const normalizeArtist = (s) =>
     (s || '').toLowerCase().replace(/\s+/g, '').trim();
 
+  // ★ 追加: タイトル正規化（かっこなどを落とす）
+  const normalizeTitle = (s) =>
+    (s || '')
+      .toLowerCase()
+      .replace(/\s*[\(-\[].*?[\)-\]]/g, '')
+      .replace(/\s+/g, '')
+      .trim();
+
+  // ★ 追加: YouTube で同じ曲名の他アーティスト動画を検索
+  const fetchAltVideos = (track, artist) => {
+    const query = `${track || ''} ${artist || ''}`.trim();
+    if (!query) return Promise.resolve([]);
+
+    const url =
+      'https://www.youtube.com/results?search_query=' +
+      encodeURIComponent(query);
+
+    console.log('[BG] ALT_VIDEOS search URL:', url);
+
+    return fetch(url)
+      .then((r) => r.text())
+      .then((html) => {
+        const m = html.match(/var ytInitialData = (\{[\s\S]*?\});/);
+        if (!m) {
+          console.warn('[BG] ytInitialData not found in search html');
+          return [];
+        }
+
+        let data;
+        try {
+          data = JSON.parse(m[1]);
+        } catch (e) {
+          console.error('[BG] ytInitialData parse error', e);
+          return [];
+        }
+
+        const videos = [];
+        const walk = (obj) => {
+          if (!obj || typeof obj !== 'object') return;
+          if (obj.videoRenderer) {
+            videos.push(obj.videoRenderer);
+            return;
+          }
+          for (const k in obj) {
+            if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+            const v = obj[k];
+            if (v && typeof v === 'object') walk(v);
+          }
+        };
+        walk(data);
+
+        console.log('[BG] ALT_VIDEOS raw videoRenderer count:', videos.length);
+
+        const targetTitleNorm = normalizeTitle(track);
+        const currentArtistNorm = normalizeArtist(artist);
+
+        const results = videos
+          .map((vr) => {
+            const videoId = vr.videoId;
+            const title =
+              (vr.title &&
+                vr.title.runs &&
+                vr.title.runs[0] &&
+                vr.title.runs[0].text) ||
+              '';
+
+            const ownerRuns =
+              (vr.longBylineText && vr.longBylineText.runs) ||
+              (vr.ownerText && vr.ownerText.runs) ||
+              [];
+            const artistName = ownerRuns[0] ? ownerRuns[0].text : '';
+
+            const durationText =
+              (vr.lengthText && vr.lengthText.simpleText) || '';
+
+            return {
+              videoId,
+              title,
+              artist: artistName,
+              durationText
+            };
+          })
+          .filter((v) => v.videoId);
+
+        const scored = results
+          .map((it) => {
+            let score = 0;
+            const tNorm = normalizeTitle(it.title);
+            if (tNorm === targetTitleNorm) score += 2;
+            else if (
+              tNorm.includes(targetTitleNorm) ||
+              targetTitleNorm.includes(tNorm)
+            )
+              score += 1;
+
+            const aNorm = normalizeArtist(it.artist);
+            if (aNorm && aNorm !== currentArtistNorm) score += 1; // 別アーティストを優先
+
+            return { ...it, score };
+          })
+          .filter((it) => it.score > 0);
+
+        scored.sort((a, b) => b.score - a.score);
+
+        console.log(
+          '[BG] ALT_VIDEOS picked:',
+          scored.slice(0, 8).map((x) => ({
+            videoId: x.videoId,
+            title: x.title,
+            artist: x.artist,
+            score: x.score
+          }))
+        );
+
+        return scored.slice(0, 8);
+      })
+      .catch((err) => {
+        console.error('[BG] fetchAltVideos error:', err);
+        return [];
+      });
+  };
+
   const pickBestLrcLibHit = (items, artist) => {
     if (!Array.isArray(items) || !items.length) return null;
     const target = normalizeArtist(artist);
@@ -363,6 +485,27 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       })
     ]);
   };
+
+  // ★ 追加: アーティスト切り替え用 API
+  if (req.type === 'GET_ALT_VIDEOS') {
+    const { track, artist } = req.payload || {};
+    console.log('[BG] GET_ALT_VIDEOS', { track, artist });
+
+    fetchAltVideos(track, artist)
+      .then((items) => {
+        sendResponse({ success: true, items });
+      })
+      .catch((err) => {
+        console.error('GET_ALT_VIDEOS Error:', err);
+        sendResponse({
+          success: false,
+          error: err.toString(),
+          items: []
+        });
+      });
+
+    return true;
+  }
 
   if (req.type === 'GET_LYRICS') {
     const { track, artist, youtube_url, video_id } = req.payload || {};
