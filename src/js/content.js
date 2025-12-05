@@ -2238,7 +2238,9 @@ const TEXTS = {
       shareEndIndex = null;
       document.body.classList.remove('ytm-share-select-mode');
       if (ui.shareBtn) ui.shareBtn.classList.remove('share-active');
-      
+      lastActiveIndex = -1;
+      lastTimeForChars = -1;
+
       if (ui.queuePanel && ui.queuePanel.classList.contains('visible')) {
           QueueManager.onSongChanged();
       }
