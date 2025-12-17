@@ -12,7 +12,8 @@
     subLang: 'en',
     uiLang: 'ja',
     syncOffset:0,
-    saveSyncOffset: false
+    saveSyncOffset: false,
+    useSharedTranslateApi: false
   };
 
   // フォールバック言語
@@ -40,6 +41,7 @@
       settings_title: "設定",
       settings_ui_lang: "UI言語 / Language",
       settings_trans: "歌詞翻訳機能を使う",
+      settings_shared_trans: "共有翻訳を使う",
       settings_main_lang: "メイン言語 (大きく表示)",
       settings_sub_lang: "サブ言語 (小さく表示)",
       settings_save: "保存",
@@ -56,13 +58,22 @@
 
   const t = (key) => {
     const lang = config.uiLang || 'ja';
-    const table =
+
+    // リモート文言は「言語テーブルが存在してもキーが欠ける」ことがあるので、
+    // キー単位でローカルフォールバックへ落とす。
+    const remoteTable =
       (UI_TEXTS && UI_TEXTS[lang]) ||
       (UI_TEXTS && UI_TEXTS['ja']) ||
+      null;
+
+    const localTable =
       LOCAL_FALLBACK_TEXTS[lang] ||
       LOCAL_FALLBACK_TEXTS['ja'] ||
       {};
-    return table[key] || key;
+
+    if (remoteTable && remoteTable[key]) return remoteTable[key];
+    if (localTable && localTable[key]) return localTable[key];
+    return key;
   };
 
 
@@ -1864,7 +1875,7 @@
       if (!segmentsToTranslate.length) return null;
       const res = await new Promise(resolve => {
         chrome.runtime.sendMessage(
-          { type: 'TRANSLATE', payload: { text: segmentsToTranslate, apiKey: config.deepLKey, targetLang } },
+          { type: 'TRANSLATE', payload: { text: segmentsToTranslate, apiKey: config.deepLKey, targetLang, useSharedTranslateApi: config.useSharedTranslateApi } },
           resolve
         );
       });
@@ -1907,13 +1918,13 @@
   };
 
   const translateTo = async (lines, langCode) => {
-    if (!config.deepLKey || !lines.length) return null;
+    if ((!config.deepLKey && !config.useSharedTranslateApi) || !lines.length) return null;
     const targetLang = resolveDeepLTargetLang(langCode);
     try {
       const baseTexts = lines.map(l => l.text || '');
       const res = await new Promise(resolve => {
         chrome.runtime.sendMessage(
-          { type: 'TRANSLATE', payload: { text: baseTexts, apiKey: config.deepLKey, targetLang } },
+          { type: 'TRANSLATE', payload: { text: baseTexts, apiKey: config.deepLKey, targetLang, useSharedTranslateApi: config.useSharedTranslateApi } },
           resolve
         );
       });
@@ -2053,7 +2064,7 @@
       }
     });
 
-    if (needDeepL.length && config.deepLKey) {
+    if (needDeepL.length && (config.deepLKey || config.useSharedTranslateApi)) {
       for (const lang of needDeepL) {
         const translatedTexts = await translateTo(baseLines, lang);
         if (translatedTexts && translatedTexts.length === baseLines.length) {
@@ -2491,6 +2502,9 @@
     if (!config.deepLKey) config.deepLKey = await storage.get('ytm_deepl_key');
     const cachedTrans = await storage.get('ytm_trans_enabled');
     if (cachedTrans !== null && cachedTrans !== undefined) config.useTrans = cachedTrans;
+
+    const cachedSharedTrans = await storage.get('ytm_shared_trans_enabled');
+    if (cachedSharedTrans !== null && cachedSharedTrans !== undefined) config.useSharedTranslateApi = cachedSharedTrans;
     
     const mainLangStored = await storage.get('ytm_main_lang');
     if (mainLangStored) config.mainLang = mainLangStored;
@@ -2555,6 +2569,21 @@
         </label>
       </div>
       
+      
+      <div class="setting-item">
+        <label class="toggle-label">
+          <span>${t('settings_shared_trans')}</span>
+          <input type="checkbox" id="shared-trans-toggle">
+        </label>
+<span>
+  文字数増加の協力お願いします（
+  <a href="https://immersionproject.coreone.work/" target="_blank" rel="noopener noreferrer">
+    こちら
+  </a>
+  ）。
+</span>
+      </div>
+
       <div class="setting-item ytm-lang-section">
         <div class="ytm-lang-label">${t('settings_main_lang')}</div>
         <div class="ytm-lang-group" id="main-lang-group">
@@ -2593,6 +2622,7 @@
     `;
     document.getElementById('deepl-key-input').value = config.deepLKey || '';
     document.getElementById('trans-toggle').checked = config.useTrans;
+    document.getElementById('shared-trans-toggle').checked = !!config.useSharedTranslateApi;
     document.getElementById('sync-offset-input').valueAsNumber = config.syncOffset || 0;
     document.getElementById('sync-offset-save-toggle').checked = config.saveSyncOffset;
     const wSlider = document.getElementById('weight-slider');
@@ -2626,13 +2656,16 @@
       const savedMainLang = await storage.get('ytm_main_lang');
       const savedSubLang = await storage.get('ytm_sub_lang');
       const savedUseTrans = await storage.get('ytm_trans_enabled');
+      const savedSharedTrans = await storage.get('ytm_shared_trans_enabled');
 
       const prevMainLang = savedMainLang || 'original';
       const prevSubLang = savedSubLang !== null ? savedSubLang : 'en'; 
       const prevUseTrans = savedUseTrans !== null ? savedUseTrans : true;
+      const prevUseSharedTrans = savedSharedTrans !== null ? savedSharedTrans : false;
 
       config.deepLKey = document.getElementById('deepl-key-input').value.trim();
       config.useTrans = document.getElementById('trans-toggle').checked;
+      config.useSharedTranslateApi = document.getElementById('shared-trans-toggle').checked;
       
       // ★設定保存
       config.lyricWeight = document.getElementById('weight-slider').value;
@@ -2644,6 +2677,7 @@
 
       storage.set('ytm_deepl_key', config.deepLKey);
       storage.set('ytm_trans_enabled', config.useTrans);
+      storage.set('ytm_shared_trans_enabled', config.useSharedTranslateApi);
       storage.set('ytm_main_lang', config.mainLang);
       storage.set('ytm_sub_lang', config.subLang);
       storage.set('ytm_ui_lang', config.uiLang);
@@ -2657,7 +2691,8 @@
       const needReload = (
           prevMainLang !== config.mainLang ||
           prevSubLang !== config.subLang ||
-          prevUseTrans !== config.useTrans
+          prevUseTrans !== config.useTrans ||
+          prevUseSharedTrans !== config.useSharedTranslateApi
       );
 
       if (needReload) {
@@ -2814,6 +2849,9 @@
     if (!config.deepLKey) config.deepLKey = await storage.get('ytm_deepl_key');
     const cachedTrans = await storage.get('ytm_trans_enabled');
     if (cachedTrans !== null && cachedTrans !== undefined) config.useTrans = cachedTrans;
+
+    const cachedSharedTrans = await storage.get('ytm_shared_trans_enabled');
+    if (cachedSharedTrans !== null && cachedSharedTrans !== undefined) config.useSharedTranslateApi = cachedSharedTrans;
     const mainLangStored = await storage.get('ytm_main_lang');
     const subLangStored = await storage.get('ytm_sub_lang');
     if (mainLangStored) config.mainLang = mainLangStored;

@@ -8,6 +8,9 @@ const DEFAULT_CLOUD_STATE = {
   lastSyncInfo: null,
 };
 
+const SHARED_TRANSLATE_ENDPOINT = 'http://immersionproject.coreone.work/api/translate';
+
+
 function loadCloudState() {
   return new Promise((resolve) => {
     chrome.storage.local.get(CLOUD_STORAGE_KEY, (items) => {
@@ -444,28 +447,189 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     return true;
   }
 
-  if (req.type === 'TRANSLATE') {
-    const { text, apiKey, targetLang } = req.payload;
-    const endpoint = apiKey && apiKey.endsWith(':fx')
-      ? 'https://api-free.deepl.com/v2/translate'
-      : 'https://api.deepl.com/v2/translate';
+    if (req.type === 'TRANSLATE') {
+    const { text, apiKey, targetLang, useSharedTranslateApi } = req.payload || {};
+    const target = targetLang || 'JA';
+    const texts = Array.isArray(text) ? text : [text];
 
-    const body = { text, target_lang: targetLang || 'JA' };
+    const translateViaDeepL = async () => {
+      if (!apiKey) throw new Error('DeepL API key is missing');
+      const endpoint = apiKey.endsWith(':fx')
+        ? 'https://api-free.deepl.com/v2/translate'
+        : 'https://api.deepl.com/v2/translate';
 
-    fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `DeepL-Auth-Key ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    })
-      .then(r => (r.ok ? r.json() : Promise.reject(r.statusText)))
-      .then(data => sendResponse({ success: true, translations: data.translations }))
-      .catch(err => sendResponse({ success: false, error: err.toString() }));
+      const body = { text: texts, target_lang: target };
+
+      const res = await withTimeout(
+        fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `DeepL-Auth-Key ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        }),
+        20000,
+        'deepl translate timeout'
+      );
+
+      if (!res.ok) {
+        const msg = await res.text().catch(() => res.statusText);
+        throw new Error(`DeepL translate failed: ${res.status} ${msg}`);
+      }
+
+      const data = await res.json();
+      if (!data || !Array.isArray(data.translations)) {
+        throw new Error('DeepL translate: invalid response');
+      }
+      return {
+        translations: data.translations,
+        engine: 'deepl',
+        plan: apiKey.endsWith(':fx') ? 'free' : 'pro',
+      };
+    };
+
+    const fetchSharedJson = async (payload) => {
+      const res = await withTimeout(
+        fetch(SHARED_TRANSLATE_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }),
+        20000,
+        'shared translate timeout'
+      );
+
+      const rawText = await res.text().catch(() => '');
+      let data;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch (e) {
+        throw new Error(`Shared translate: invalid JSON (${res.status})`);
+      }
+
+      if (!res.ok || !data || data.ok !== true) {
+        const hint = data && (data.error || data.message) ? (data.error || data.message) : rawText;
+        throw new Error(`Shared translate failed: ${res.status} ${hint || res.statusText}`);
+      }
+      return data;
+    };
+
+    const translateViaShared = async () => {
+      const toTranslations = (arr) => arr.map(v => ({ text: (v ?? '').toString() }));
+
+      // まずバッチを試す（サーバーが配列対応していれば最速）
+      try {
+        const data = await fetchSharedJson({ text: texts, target_lang: target });
+        if (Array.isArray(data.text) && data.text.length === texts.length) {
+          return {
+            translations: toTranslations(data.text),
+            detected_source_language: data.detected_source_language || null,
+            engine: data.engine || 'shared',
+            plan: data.plan || null,
+          };
+        }
+        if (Array.isArray(data.translations) && data.translations.length === texts.length) {
+          const mapped = data.translations.map(x => ({ text: (x && x.text !== undefined ? x.text : x) ?? '' }));
+          return {
+            translations: mapped,
+            detected_source_language: data.detected_source_language || null,
+            engine: data.engine || 'shared',
+            plan: data.plan || null,
+          };
+        }
+        if (typeof data.text === 'string' && texts.length === 1) {
+          return {
+            translations: [{ text: data.text }],
+            detected_source_language: data.detected_source_language || null,
+            engine: data.engine || 'shared',
+            plan: data.plan || null,
+          };
+        }
+        // 想定外の形なら個別へフォールバック
+      } catch (e) {
+        // バッチ失敗 → 個別へ
+      }
+
+      // 個別リクエスト（サーバーが "text: string" 前提でも動く）
+      const pMap = async (arr, mapper, concurrency = 5) => {
+        const results = new Array(arr.length);
+        let i = 0;
+        const workers = Array.from({ length: Math.min(concurrency, arr.length) }, async () => {
+          while (true) {
+            const idx = i++;
+            if (idx >= arr.length) break;
+            results[idx] = await mapper(arr[idx], idx);
+          }
+        });
+        await Promise.all(workers);
+        return results;
+      };
+
+      const perItem = await pMap(
+        texts,
+        async (t) => fetchSharedJson({ text: t ?? '', target_lang: target }),
+        5
+      );
+
+      const translated = perItem.map(d => (d && d.text !== undefined ? d.text : ''));
+
+      const meta = perItem.find(Boolean) || {};
+      return {
+        translations: toTranslations(translated),
+        detected_source_language: meta.detected_source_language || null,
+        engine: meta.engine || 'shared',
+        plan: meta.plan || null,
+      };
+    };
+
+    (async () => {
+      try {
+        if (useSharedTranslateApi) {
+          const shared = await translateViaShared();
+          sendResponse({
+            success: true,
+            translations: shared.translations,
+            detected_source_language: shared.detected_source_language,
+            engine: shared.engine,
+            plan: shared.plan,
+          });
+          return;
+        }
+
+        const deepl = await translateViaDeepL();
+        sendResponse({
+          success: true,
+          translations: deepl.translations,
+          engine: deepl.engine,
+          plan: deepl.plan,
+        });
+      } catch (e) {
+        // 共有翻訳が落ちてても DeepL キーがあれば自動フォールバック
+        if (useSharedTranslateApi && apiKey) {
+          try {
+            const deepl = await translateViaDeepL();
+            sendResponse({
+              success: true,
+              translations: deepl.translations,
+              engine: deepl.engine,
+              plan: deepl.plan,
+              fallback_from: 'shared',
+              fallback_error: String(e),
+            });
+            return;
+          } catch (e2) {
+            sendResponse({ success: false, error: `${String(e2)} (shared failed: ${String(e)})` });
+            return;
+          }
+        }
+        sendResponse({ success: false, error: String(e) });
+      }
+    })();
 
     return true;
   }
+
 
   // 歌詞取得
   if (req.type === 'GET_LYRICS') {

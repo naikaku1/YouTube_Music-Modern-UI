@@ -290,7 +290,7 @@ body.ytm-custom-layout ytmusic-search-box {
   font-size: 14px;
 }
 
-#trans-toggle, #sync-offset-save-toggle {
+#trans-toggle, #shared-trans-toggle, #sync-offset-save-toggle {
   appearance: none;
   width: 40px;
   height: 22px;
@@ -300,11 +300,11 @@ body.ytm-custom-layout ytmusic-search-box {
   transition: 0.3s;
 }
 
-#trans-toggle:checked, #sync-offset-save-toggle:checked {
+#trans-toggle:checked, #shared-trans-toggle:checked, #sync-offset-save-toggle:checked {
   background: #34c759;
 }
 
-#trans-toggle::after, #sync-offset-save-toggle::after {
+#trans-toggle::after, #shared-trans-toggle::after, #sync-offset-save-toggle::after {
   content: '';
   position: absolute;
   top: 2px;
@@ -316,7 +316,7 @@ body.ytm-custom-layout ytmusic-search-box {
   transition: 0.3s;
 }
 
-#trans-toggle:checked::after, #sync-offset-save-toggle:checked::after {
+#trans-toggle:checked::after, #shared-trans-toggle:checked::after, #sync-offset-save-toggle:checked::after {
   transform: translateX(18px);
 }
 
