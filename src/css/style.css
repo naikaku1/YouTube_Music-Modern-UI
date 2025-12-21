@@ -33,17 +33,9 @@ body.ytm-custom-layout #ytm-custom-bg {
 }
 
 @keyframes ytmBgDrift {
-  0% {
-    transform: scale(1.15) translate3d(-3%, -3%, 0);
-  }
-
-  50% {
-    transform: scale(1.15) translate3d(4%, 2%, 0);
-  }
-
-  100% {
-    transform: scale(1.15) translate3d(-2%, 4%, 0);
-  }
+  0% { transform: scale(1.15) translate3d(-3%, -3%, 0); }
+  50% { transform: scale(1.15) translate3d(4%, 2%, 0); }
+  100% { transform: scale(1.15) translate3d(-2%, 4%, 0); }
 }
 
 body.ytm-custom-layout #ytm-custom-bg {
@@ -52,19 +44,9 @@ body.ytm-custom-layout #ytm-custom-bg {
 
 
 @keyframes ytmLyricsBounce {
-
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-
-  30% {
-    transform: translateY(-2px);
-  }
-
-  60% {
-    transform: translateY(0);
-  }
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-2px); }
+  60% { transform: translateY(0); }
 }
 
 .ytm-glass-btn.lyrics-btn.ytm-lyrics-has-candidates {
@@ -415,8 +397,7 @@ body.ytm-custom-layout ytmusic-search-box {
   margin-bottom: 35px;
   padding-left: 40px;
   cursor: pointer;
-  transition: transform 0.5s, filter 0.5s, color 0.5s;
-  /* font-weightはカクつくのでtransitionから外す */
+  transition: transform 0.5s, filter 0.5s, color 0.5s; /* font-weightはカクつくのでtransitionから外す */
   transform-origin: left;
   filter: blur(1px);
   transform: scale(0.95);
@@ -678,32 +659,48 @@ body.ytm-custom-layout ytmusic-player-bar .right-controls #my-mode-toggle {
 }
 
 /* 音量・リピート・シャッフルなど */
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="音量"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="ミュート"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="volume"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="Volume"] {
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="音量"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="ミュート"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="volume"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="Volume"] {
   order: 21;
   margin-left: 2px;
 }
 
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="リピート"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="繰り返し"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="repeat"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="Repeat"] {
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="リピート"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="繰り返し"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="repeat"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="Repeat"] {
   order: 22;
 }
 
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="シャッフル"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="シャッフル再生"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="shuffle"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls ytmusic-toggle-button-renderer[aria-label*="Shuffle"] {
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="シャッフル"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="シャッフル再生"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="shuffle"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  ytmusic-toggle-button-renderer[aria-label*="Shuffle"] {
   order: 23;
 }
 
-body.ytm-custom-layout ytmusic-player-bar .right-controls tp-yt-paper-icon-button[aria-label*="メニュー"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls tp-yt-paper-icon-button[aria-label*="その他"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls tp-yt-paper-icon-button[aria-label*="More"],
-body.ytm-custom-layout ytmusic-player-bar .right-controls tp-yt-paper-icon-button[aria-label*="menu"] {
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  tp-yt-paper-icon-button[aria-label*="メニュー"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  tp-yt-paper-icon-button[aria-label*="その他"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  tp-yt-paper-icon-button[aria-label*="More"],
+body.ytm-custom-layout ytmusic-player-bar .right-controls
+  tp-yt-paper-icon-button[aria-label*="menu"] {
   order: 24;
 }
 
@@ -1926,13 +1923,11 @@ body.ytm-custom-layout ytmusic-player-bar tp-yt-paper-slider#progress-bar [role=
 /* クラウドシンクのやつ */
 
 .dr-cloud-sync-btn.cloud-ok .dr-cloud-emoji {
-  color: #22c55e;
-  /* 緑 */
+  color: #22c55e; /* 緑 */
 }
 
 .dr-cloud-sync-btn.cloud-ng .dr-cloud-emoji {
-  color: #ef4444;
-  /* 赤 */
+  color: #ef4444; /* 赤 */
 }
 
 .dr-cloud-sync-btn .dr-cloud-time {
