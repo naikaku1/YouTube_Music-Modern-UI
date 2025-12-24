@@ -3685,7 +3685,7 @@ function renderSettingsPanel() {
             });
           }
         } else {
-          console.warn('Lyrics API returned no lyrics or success=false');
+          //console.warn('Lyrics API returned no lyrics or success=false');
         }
       } catch (e) {
         console.error('GET_LYRICS failed', e);
