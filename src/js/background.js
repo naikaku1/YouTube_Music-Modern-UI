@@ -365,10 +365,31 @@ const fetchFromLrchub = (track, artist, youtube_url, video_id) => {
     });
 };
 
+
+// --- GitHub raw のブラウザキャッシュ対策: 毎回URLを変えて最新を取りに行く ---
+const withRandomCacheBuster = (url, buster) => {
+  const v = String(buster || (1000 + Math.floor(Math.random() * 9000)));
+  try {
+    const u = new URL(url);
+    u.searchParams.set('v', v);
+    return u.toString();
+  } catch (e) {
+    const sep = url.includes('?') ? '&' : '?';
+    return url + sep + 'v=' + v;
+  }
+};
+
 const fetchFromGithub = (video_id) => {
-  if (!video_id) return Promise.resolve({ lyrics: '', dynamicLines: null });
+  if (!video_id) return Promise.resolve({ lyrics: '', dynamicLines: null, subLyrics: '' });
 
   const base = `https://raw.githubusercontent.com/LRCHub/${video_id}/main`;
+  const __cacheBuster = (1000 + Math.floor(Math.random() * 9000));
+
+  // duet: optional sub vocal LRC (only lines that should be shown on the right)
+  const subUrl = `${base}/sub.txt`;
+  const pSub = fetch(withRandomCacheBuster(subUrl, __cacheBuster), { cache: 'no-store' })
+    .then(r => (r.ok ? r.text() : ''))
+    .catch(() => '');
 
   const normalizeDynamicLines = (json) => {
     if (!json) return null;
@@ -416,7 +437,7 @@ const fetchFromGithub = (video_id) => {
 
   // 1) DynamicLyrics.json を最優先
   const dynUrl = `${base}/DynamicLyrics.json`;
-  return fetch(dynUrl)
+  return fetch(withRandomCacheBuster(dynUrl, __cacheBuster), { cache: 'no-store' })
     .then(async (r) => {
       if (!r.ok) return null;
       try {
@@ -434,15 +455,19 @@ const fetchFromGithub = (video_id) => {
       return null;
     })
     .catch(() => null)
-    .then(dynRes => {
-      if (dynRes && dynRes.lyrics) return dynRes;
+    .then(async (dynRes) => {
+      const subLyrics = (await pSub) || '';
+
+      if (dynRes && dynRes.lyrics) {
+        return { ...dynRes, subLyrics };
+      }
 
       // 2) README.md (タイムスタンプ/プレーン)
       const readmeUrl = `${base}/README.md`;
-      return fetch(readmeUrl)
+      return fetch(withRandomCacheBuster(readmeUrl, __cacheBuster), { cache: 'no-store' })
         .then(r => (r.ok ? r.text() : ''))
         .then(text => {
-          if (!text) return { lyrics: '', dynamicLines: null };
+          if (!text) return { lyrics: '', dynamicLines: null, subLyrics };
 
           const body = text
             .split('\n')
@@ -453,11 +478,11 @@ const fetchFromGithub = (video_id) => {
             .join('\n')
             .trim();
 
-          return { lyrics: body, dynamicLines: null };
+          return { lyrics: body, dynamicLines: null, subLyrics };
         })
-        .catch(() => ({ lyrics: '', dynamicLines: null }));
+        .catch(() => ({ lyrics: '', dynamicLines: null, subLyrics }));
     });
-};
+};;
 
 const extractVideoIdFromUrl = (youtube_url) => {
   if (!youtube_url) return null;
@@ -865,6 +890,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
             success: true,
             lyrics: d.lyrics,
             dynamicLines: d.dynamicLines || null,
+            subLyrics: (typeof d.subLyrics === 'string' ? d.subLyrics : ''),
             hasSelectCandidates: d.hasSelectCandidates || hasCandidates,
             candidates: sharedCandidates,
             config: d.config || null,
@@ -891,6 +917,15 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         const r = await pGit;
         gitRes = r;
 
+        // duet: sub.txt may arrive via GitHub even when LRCHub won first
+        try {
+          if (gitRes && !gitRes.error && gitRes.data && typeof gitRes.data.subLyrics === 'string' && gitRes.data.subLyrics.trim()) {
+            pushMetaUpdate({ video_id: vidForGit, subLyrics: gitRes.data.subLyrics });
+          }
+        } catch (e) {
+          // ignore
+        }
+
         if (
           !responded &&
           gitRes &&
@@ -906,6 +941,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
             success: true,
             lyrics: d.lyrics,
             dynamicLines: d.dynamicLines || null,
+            subLyrics: (typeof d.subLyrics === 'string' ? d.subLyrics : ''),
             hasSelectCandidates: false,
             candidates: [],
             config: null,

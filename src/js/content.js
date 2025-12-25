@@ -897,6 +897,14 @@
   let lyricsData = [];
   let hasTimestamp = false;
   let dynamicLines = null;
+  // duet: raw sub vocal LRC (sub.txt) - only lines to show on the right
+  let duetSubLyricsRaw = '';
+  // keep last raw lyrics text so we can re-render when sub lyrics arrive later
+  let lastRawLyricsText = null;
+
+  // dynamicLyrics helper: time->line map (rebuild when reference changes)
+  let _dynMapSrc = null;
+  let _dynMap = null;
   let lyricsCandidates = null;
   let selectedCandidateId = null;
   let lastActiveIndex = -1;
@@ -2074,6 +2082,77 @@
     return lines;
   };
 
+  // ===== duet helpers =====
+  const timeKey = (t) => {
+    if (typeof t !== 'number' || Number.isNaN(t)) return 'NaN';
+    // milliseconds precision is enough for LRC tags
+    return t.toFixed(3);
+  };
+
+  const parseSubLRC = (lrc) => {
+    const { lines, hasTs } = parseLRCInternal(lrc);
+    return { lines: Array.isArray(lines) ? lines : [], hasTs: !!hasTs };
+  };
+
+  const mergeDuetLines = (mainLines, subLines) => {
+    const subTimeKeys = new Set();
+    (subLines || []).forEach(l => {
+      if (typeof l?.time === 'number') subTimeKeys.add(timeKey(l.time));
+    });
+
+    // "sub があるときはノーマルを非表示" = sub 側にあるタイムスタンプの行は main 側から除外する
+    const filteredMain = (mainLines || []).filter(l => {
+      if (typeof l?.time !== 'number') return true;
+      return !subTimeKeys.has(timeKey(l.time));
+    });
+
+    const merged = [];
+    filteredMain.forEach(l => merged.push({ ...l, duetSide: 'left' }));
+    (subLines || []).forEach(l => merged.push({ ...l, duetSide: 'right' }));
+
+    merged.sort((a, b) => {
+      const at = (typeof a.time === 'number') ? a.time : Number.POSITIVE_INFINITY;
+      const bt = (typeof b.time === 'number') ? b.time : Number.POSITIVE_INFINITY;
+      if (at !== bt) return at - bt;
+      // same timestamp: keep left before right for readability
+      const ap = a.duetSide === 'right' ? 1 : 0;
+      const bp = b.duetSide === 'right' ? 1 : 0;
+      return ap - bp;
+    });
+
+    return merged;
+  };
+
+  const getDynamicLineForTime = (sec) => {
+    if (!dynamicLines || !Array.isArray(dynamicLines) || !dynamicLines.length) return null;
+
+    // rebuild map only when dynamicLines reference changes
+    if (_dynMapSrc !== dynamicLines) {
+      _dynMapSrc = dynamicLines;
+      _dynMap = new Map();
+
+      dynamicLines.forEach(dl => {
+        let ms = null;
+
+        if (typeof dl?.startTimeMs === 'number') {
+          ms = dl.startTimeMs;
+        } else if (typeof dl?.startTimeMs === 'string') {
+          const n = Number(dl.startTimeMs);
+          if (!Number.isNaN(n)) ms = n;
+        } else if (Array.isArray(dl?.chars) && dl.chars.length) {
+          const ts = dl.chars.map(c => (typeof c?.t === 'number' ? c.t : null)).filter(v => v != null);
+          if (ts.length) ms = Math.min(...ts);
+        }
+
+        if (typeof ms === 'number') {
+          _dynMap.set(timeKey(ms / 1000), dl);
+        }
+      });
+    }
+
+    return _dynMap?.get(timeKey(sec)) || null;
+  };
+
   const hoverTimeInfoSetup = () => {
     const timeToSeconds = (str) => {
       const [m, s] = str.split(":").map(Number);
@@ -2373,6 +2452,15 @@
       if (p.config !== undefined) lyricsConfig = p.config;
       if (Array.isArray(p.requests)) lyricsRequests = p.requests;
 
+      // duet: sub lyrics can arrive later (GitHub)
+      if (typeof p.subLyrics === 'string') {
+        duetSubLyricsRaw = p.subLyrics;
+        // re-render with same raw lyrics to avoid showing duplicate left+right lines
+        if (lastRawLyricsText && typeof lastRawLyricsText === 'string') {
+          applyLyricsText(lastRawLyricsText);
+        }
+      }
+
       // candidates/config が更新されたらメニューを再描画
       refreshCandidateMenu();
       refreshLockMenu();
@@ -2579,11 +2667,35 @@
       renderLyrics([]);
       return;
     }
+    lastRawLyricsText = rawLyrics;
     let parsed = parseBaseLRC(rawLyrics);
     const videoUrl = getCurrentVideoUrl();
-    let finalLines = parsed;
+
+    // duet: if sub.txt exists, hide (filter) the normal lines that match sub timestamps,
+    // and render the sub lines on the right.
+    let baseLines = parsed;
+    let hasDuetSub = false;
+    if (typeof duetSubLyricsRaw === 'string' && duetSubLyricsRaw.trim()) {
+      const subObj = parseSubLRC(duetSubLyricsRaw);
+      const subLines = subObj.lines || [];
+      hasDuetSub = !!subObj.hasTs && subLines.some(l => typeof l?.time === 'number');
+      if (hasDuetSub) {
+        // even if the main lyrics didn't have tags, duet sub implies timestamp mode
+        hasTimestamp = true;
+        baseLines = mergeDuetLines(parsed, subLines);
+      }
+    }
+    document.body.classList.toggle('ytm-duet-mode', hasDuetSub);
+
+    let finalLines = baseLines;
     if (config.useTrans) {
-      finalLines = await applyTranslations(parsed, videoUrl);
+      const translated = await applyTranslations(baseLines, videoUrl);
+      // applyTranslations rebuilds objects, so re-attach duetSide by index
+      if (Array.isArray(translated) && Array.isArray(baseLines) && translated.length === baseLines.length) {
+        finalLines = translated.map((l, i) => ({ ...l, duetSide: baseLines[i]?.duetSide }));
+      } else {
+        finalLines = translated;
+      }
     }
     if (keyAtStart !== currentKey) return;
     lyricsData = finalLines;
@@ -3513,6 +3625,7 @@ function renderSettingsPanel() {
     let cached = await storage.get(thisKey);
     isFallbackLyrics = false;
     dynamicLines = null;
+    duetSubLyricsRaw = '';
     lyricsCandidates = null;
     selectedCandidateId = null;
     lyricsRequests = null;
@@ -3527,6 +3640,7 @@ function renderSettingsPanel() {
       } else if (typeof cached === 'object') {
         if (typeof cached.lyrics === 'string') data = cached.lyrics;
         if (Array.isArray(cached.dynamicLines)) dynamicLines = cached.dynamicLines;
+        if (typeof cached.subLyrics === 'string') duetSubLyricsRaw = cached.subLyrics;
         if (cached.noLyrics) noLyricsCached = true;
         if (cached.githubFallback) isFallbackLyrics = true;
         if (Array.isArray(cached.candidates)) lyricsCandidates = cached.candidates;
@@ -3551,9 +3665,26 @@ function renderSettingsPanel() {
         if (video_id_fast) {
           const GH_BASE = `https://raw.githubusercontent.com/LRCHub/${video_id_fast}/main`;
 
+
+                  const __cacheBusterFast = (1000 + Math.floor(Math.random() * 9000));
+
+
+// --- GitHub raw のブラウザキャッシュ対策: 毎回URLを変えて最新を取りに行く ---
+const withRandomCacheBusterFast = (url) => {
+  const v = String(__cacheBusterFast);
+  try {
+    const u = new URL(url);
+    u.searchParams.set('v', v);
+    return u.toString();
+  } catch (e) {
+    const sep = url.includes('?') ? '&' : '?';
+    return url + sep + 'v=' + v;
+  }
+};
+
           const safeFetchText = async (url) => {
             try {
-              const r = await fetch(url, { cache: 'force-cache' });
+              const r = await fetch(withRandomCacheBusterFast(url), { cache: 'no-store' });
               if (!r.ok) return '';
               return (await r.text()) || '';
             } catch (e) {
@@ -3561,9 +3692,13 @@ function renderSettingsPanel() {
             }
           };
 
+          // duet: try to fetch sub.txt (optional)
+          const subTextFast = await safeFetchText(`${GH_BASE}/sub.txt`);
+          if (subTextFast && subTextFast.trim()) duetSubLyricsRaw = subTextFast;
+
           const safeFetchJson = async (url) => {
             try {
-              const r = await fetch(url, { cache: 'force-cache' });
+              const r = await fetch(withRandomCacheBusterFast(url), { cache: 'no-store' });
               if (!r.ok) return null;
               return await r.json();
             } catch (e) {
@@ -3654,7 +3789,8 @@ function renderSettingsPanel() {
                     lyrics: built,
                     dynamicLines: dynLines,
                     noLyrics: false,
-                    githubFallback: true
+                    githubFallback: true,
+                    subLyrics: (typeof duetSubLyricsRaw === 'string' ? duetSubLyricsRaw : '')
                   });
                 }
                 return;
@@ -3673,7 +3809,8 @@ function renderSettingsPanel() {
                   lyrics: lyricsText,
                   dynamicLines: null,
                   noLyrics: false,
-                  githubFallback: true
+                  githubFallback: true,
+                  subLyrics: (typeof duetSubLyricsRaw === 'string' ? duetSubLyricsRaw : '')
                 });
               }
               return;
@@ -3702,6 +3839,7 @@ function renderSettingsPanel() {
         refreshCandidateMenu();
         refreshLockMenu();
         isFallbackLyrics = !!res?.githubFallback;
+        if (typeof res?.subLyrics === 'string' && res.subLyrics.trim()) duetSubLyricsRaw = res.subLyrics;
 
         if (res?.success && typeof res.lyrics === 'string' && res.lyrics.trim()) {
           data = res.lyrics;
@@ -3713,6 +3851,7 @@ function renderSettingsPanel() {
               dynamicLines: dynamicLines || null,
               noLyrics: false,
               githubFallback: isFallbackLyrics,
+              subLyrics: (typeof duetSubLyricsRaw === 'string' ? duetSubLyricsRaw : ''),
               candidates: lyricsCandidates || null,
               requests: lyricsRequests || null,
               config: lyricsConfig || null
@@ -3752,13 +3891,26 @@ function renderSettingsPanel() {
     data.forEach((line, index) => {
       const row = createEl('div', '', 'lyric-line');
 
+      if (line && line.duetSide === 'right') {
+        row.classList.add('sub-vocal');
+      } else if (line && line.duetSide === 'left') {
+        row.classList.add('main-vocal');
+      }
 
       if (typeof line.time === 'number') {
         row.dataset.startTime = String(line.time);
       }
 
       const mainSpan = createEl('span', '', 'lyric-main');
-      const dyn = dynamicLines && dynamicLines[index];
+
+      // dynamic lyrics highlighting: only for main/left side (avoid breaking duet index mapping)
+      let dyn = null;
+      if (!(line && line.duetSide === 'right')) {
+        if (dynamicLines && Array.isArray(dynamicLines) && dynamicLines.length) {
+          if (typeof line.time === 'number') dyn = getDynamicLineForTime(line.time) || dynamicLines[index];
+          else dyn = dynamicLines[index];
+        }
+      }
       if (dyn && Array.isArray(dyn.chars) && dyn.chars.length) {
         dyn.chars.forEach((ch, ci) => {
           const chSpan = createEl('span', '', 'lyric-char');
