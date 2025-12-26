@@ -2175,10 +2175,11 @@
         info.id = 'hover-time-info-new';
         info.style.display = 'none';
         info.textContent = '0:00';
-        parent.appendChild(info);
+        document.body.appendChild(info);
       }
     };
     const adjustHoverTimeInfoPosition = () => {
+      const progresshandle = document.querySelector('tp-yt-paper-slider#progress-bar #sliderKnob');
       const info = document.querySelector('#hover-time-info-new');
       const slider = document.querySelector(
         'tp-yt-paper-slider#progress-bar tp-yt-paper-progress#sliderBar #primaryProgress'
@@ -2187,7 +2188,7 @@
       const refresh = () => {
         const onMove = (e) => {
           const marginLeft = (playerBar.parentElement.offsetWidth - playerBar.offsetWidth) / 2;
-          const infoLeft = e.clientX - marginLeft;
+          const infoLeft = e.clientX;
           const relativeMouseX = e.clientX - marginLeft;
           const timeinfo = document.querySelector('#left-controls > span');
           const songLengthSeconds = timeToSeconds(timeinfo.textContent.replace(/^[^/]+\/\s*/, ""));
@@ -2203,9 +2204,11 @@
         };
         slider.addEventListener('mousemove', onMove);
         slider.addEventListener('mouseout', hide);
+        progresshandle.addEventListener('mousemove', onMove);
+        progresshandle.addEventListener('mouseout', hide);
       };
       const interval = setInterval(() => {
-        if (slider && info) {
+        if (slider && info && progresshandle) {
           refresh();
           clearInterval(interval);
         }

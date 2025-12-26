@@ -704,19 +704,21 @@ body.ytm-custom-layout .middle-controls {
 }
 
 /* ホバーしたときの時間表示 */
-body.ytm-custom-layout ytmusic-player-bar #hover-time-info-new {
+body.ytm-custom-layout #hover-time-info-new {
   font-family: Roboto, Noto Naskh Arabic UI, Arial, sans-serif !important;
   font-size: var(--ytmusic-caption-1-font-size) !important;
   line-height: var(--ytmusic-title-line-height) !important;
   font-weight: 400 !important;
   color: #aaa !important;
   color: #fff !important;
-  position: absolute !important;
-  top: -8px !important;
+  position: fixed !important;
+  top: 87% !important;
   transform: translate3d(-50%, -100%, 0) !important;
   padding: 4px 8px !important;
-  background-color: rgba(0, 0, 0, 0.2);
-  border-radius: 6px !important;
+  background-color: rgba(100,100,100,0.2) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  border-radius: 10px !important;
+  z-index: 10000 !important;
 }
 
 body.ytm-custom-layout ytmusic-player-bar .content-info-wrapper {
@@ -916,19 +918,21 @@ body:not(.ytm-custom-layout) ytmusic-player-bar .right-controls tp-yt-paper-icon
 }
 
 
-body:not(.ytm-custom-layout) ytmusic-player-bar #hover-time-info-new {
+body:not(.ytm-custom-layout) #hover-time-info-new {
   font-family: Roboto, Noto Naskh Arabic UI, Arial, sans-serif !important;
   font-size: var(--ytmusic-caption-1-font-size) !important;
   line-height: var(--ytmusic-title-line-height) !important;
   font-weight: 400 !important;
   color: #aaa !important;
   color: #fff !important;
-  position: absolute !important;
-  top: -8px !important;
+  position: fixed !important;
+  top: 90% !important;
   transform: translate3d(-50%, -100%, 0) !important;
   padding: 4px 8px !important;
-  background-color: rgba(50, 50, 50, 0.40);
-  border-radius: 6px !important;
+  background-color: rgba(100,100,100, 0.40) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  border-radius: 10px !important;
+  z-index: 10000 !important;
 }
 
 body:not(.ytm-custom-layout) ytmusic-multi-page-menu-renderer {
