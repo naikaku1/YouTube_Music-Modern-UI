@@ -2406,20 +2406,91 @@
 
 
   const getMetadata = () => {
+    // Prefer MediaSession metadata (most accurate)
     if (navigator.mediaSession?.metadata) {
-      const { title, artist, artwork } = navigator.mediaSession.metadata;
+      const { title, artist, album, artwork } = navigator.mediaSession.metadata;
       return {
-        title,
-        artist,
-        src: artwork.length ? artwork[artwork.length - 1].src : null
+        title: (title || '').toString(),
+        artist: (artist || '').toString(),
+        album: (album || '').toString(),
+        src: Array.isArray(artwork) && artwork.length ? artwork[artwork.length - 1].src : null
       };
     }
+
+    // Fallback: read from player bar
     const tEl = document.querySelector('yt-formatted-string.title.style-scope.ytmusic-player-bar');
     const aEl = document.querySelector('.byline.style-scope.ytmusic-player-bar');
-    return (tEl && aEl)
-      ? { title: tEl.textContent, artist: aEl.textContent.split('•')[0].trim(), src: null }
-      : null;
+    if (!(tEl && aEl)) return null;
+
+    const parts = (aEl.textContent || '')
+      .split('•')
+      .map(s => (s || '').trim())
+      .filter(Boolean);
+
+    return {
+      title: (tEl.textContent || '').trim(),
+      artist: parts[0] || '',
+      album: parts[1] || '',
+      src: null
+    };
   };
+  // ===================== Discord Presence (Localhost) =====================
+  const DISCORD_PRESENCE_THROTTLE_MS = 1200;
+  let __lastPresence = { line1: '', line2: '', ts: 0 };
+
+  const _normPresence = (s, maxLen = 128) => {
+    const t = (s ?? '').toString().replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    return t.length > maxLen ? (t.slice(0, maxLen - 1) + '…') : t;
+  };
+
+  const _buildPresenceLine1 = (meta) => {
+    if (!meta) return '';
+    const parts = [meta.artist, meta.album, meta.title]
+      .map(v => (v ?? '').toString().trim())
+      .filter(Boolean);
+    return parts.join(' - ');
+  };
+
+//歌詞送信ロジック
+  const sendDiscordPresence = (meta, lyricLine) => {
+    try {
+      if (!meta) return;
+      const line1 = _normPresence(_buildPresenceLine1(meta), 128);
+      const line2 = _normPresence(lyricLine || '', 128);
+      const now = Date.now();
+
+      // Don't spam: send only if content changed OR enough time passed
+      if (line1 === __lastPresence.line1 && line2 === __lastPresence.line2 && (now - __lastPresence.ts) < DISCORD_PRESENCE_THROTTLE_MS) {
+        return;
+      }
+      __lastPresence = { line1, line2, ts: now };
+
+      chrome.runtime.sendMessage({
+        type: 'DISCORD_PRESENCE_UPDATE',
+        payload: {
+          line1,
+          line2,
+          url: getCurrentVideoUrl(),
+          meta: {
+            title: meta.title || '',
+            artist: meta.artist || '',
+            album: meta.album || '',
+            src: meta.src || null
+          }
+        }
+      });
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  const clearDiscordPresence = () => {
+    try {
+      chrome.runtime.sendMessage({ type: 'DISCORD_PRESENCE_CLEAR' });
+    } catch (e) { }
+  };
+
 
   const getCurrentVideoUrl = () => {
     try {
@@ -4034,6 +4105,25 @@ const withRandomCacheBusterFast = (url) => {
       }
       if (i === lyricsData.length - 1) idx = i;
     }
+    // Discord presence: reflect the lyric at the current playback position (seek-safe)
+    try {
+      const metaNow = getMetadata();
+      let lyricText = '';
+      if (idx >= 0 && idx < lyricsData.length) {
+        lyricText = (lyricsData[idx]?.text || '').trim();
+      }
+      // Fallback to DOM text (in case rendered text differs)
+      if (!lyricText && ui.lyrics) {
+        const rowsMain = ui.lyrics.querySelectorAll('.lyric-line');
+        if (rowsMain && rowsMain.length && idx >= 0 && idx < rowsMain.length) {
+          const row = rowsMain[idx];
+          const mainEl = row.querySelector('.lyric-main') || row;
+          lyricText = (mainEl && mainEl.textContent ? mainEl.textContent : '').trim();
+        }
+      }
+      sendDiscordPresence(metaNow, lyricText);
+    } catch (e) { }
+
 
     const targets = [];
     if (ui.lyrics) targets.push(ui.lyrics);
@@ -4054,8 +4144,9 @@ const withRandomCacheBusterFast = (url) => {
 
             r.scrollIntoView({ behavior: 'smooth', block: 'center' });
             // ★★★★★★★★★★★★★★★★★★★★★★★★★★★
-
-            if (container === ui.lyrics) ReplayManager.incrementLyricCount();
+            if (container === ui.lyrics) {
+              ReplayManager.incrementLyricCount();
+            }
           }
           if (r.classList.contains('has-translation')) {
             r.classList.add('show-translation');
@@ -4376,6 +4467,8 @@ const withRandomCacheBusterFast = (url) => {
     const isPlayerOpen = layout?.hasAttribute('player-page-open');
     if (!config.mode || !isPlayerOpen) {
       document.body.classList.remove('ytm-custom-layout');
+      // Discord presence: clear when not in player-page
+      clearDiscordPresence();
       return;
     }
     document.body.classList.add('ytm-custom-layout');
@@ -4453,6 +4546,8 @@ const withRandomCacheBusterFast = (url) => {
       }
 
       updateMetaUI(meta);
+      // Discord presence: set line1 immediately (lyrics line2 will update during playback)
+      sendDiscordPresence(meta, '');
       refreshCandidateMenu();
       refreshLockMenu();
       if (ui.lyrics) ui.lyrics.scrollTop = 0;
