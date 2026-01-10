@@ -4547,6 +4547,12 @@ const withRandomCacheBusterFast = (url) => {
       }
 
       updateMetaUI(meta);
+
+      // PIPウィンドウのメタデータ(タイトル・アーティスト・画像)を更新
+      if (PipManager) {
+        PipManager.updateMeta(meta.title, meta.artist);
+      }
+
       // Discord presence: set line1 immediately (lyrics line2 will update during playback)
       sendDiscordPresence(meta, '');
       refreshCandidateMenu();
